@@ -12,19 +12,12 @@ type MemoryRepository struct {
 	mu       sync.RWMutex
 	gates    map[string]domain.Gate
 	commands map[string]domain.GateCommand
-	basis    map[string]movementBasis
-}
-
-type movementBasis struct {
-	aperture float64
-	revision int64
 }
 
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
 		gates:    make(map[string]domain.Gate),
 		commands: make(map[string]domain.GateCommand),
-		basis:    make(map[string]movementBasis),
 	}
 }
 
@@ -36,10 +29,6 @@ func (m *MemoryRepository) CreateGate(_ context.Context, gate domain.Gate) error
 		return domain.Conflict("duplicate_gate_id", "gate id already exists")
 	}
 	m.gates[gate.ID] = gate
-	m.basis[gate.ID] = movementBasis{
-		aperture: gate.Aperture,
-		revision: gate.Basis,
-	}
 	return nil
 }
 
@@ -71,19 +60,14 @@ func (m *MemoryRepository) CreateCommand(_ context.Context, command domain.GateC
 	if command.TargetAperture > gate.MaxAperture {
 		return domain.Invalid("invalid_target_aperture", "target aperture is outside the gate limit")
 	}
-	basis, exists := m.basis[command.GateID]
-	if !exists {
-		return domain.Internal("movement_basis_missing", "gate movement basis is not available")
-	}
 	movement, err := domain.NewMovementPlan(
-		basis.aperture,
+		gate.Aperture,
 		command.TargetAperture,
-		basis.revision,
+		gate.Basis,
 	)
 	if err != nil {
 		return err
 	}
-	command.StartingAperture = basis.aperture
 	command.Movement = movement
 	if _, exists := m.commands[command.ID]; exists {
 		return domain.Conflict("duplicate_command_id", "command id already exists")

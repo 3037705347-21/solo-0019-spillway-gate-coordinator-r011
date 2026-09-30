@@ -71,12 +71,11 @@ func (p MovementPlan) ValidateBase(aperture float64, revision int64) error {
 	return nil
 }
 
-func (p MovementPlan) Resolve(currentAperture float64) (float64, error) {
-	finalAperture := currentAperture + p.Delta
-	if finalAperture < 0 {
-		return 0, Invalid("invalid_final_aperture", "resolved aperture must not be negative")
-	}
-	return finalAperture, nil
+// Resolve returns the command's absolute target. Using the stored delta would
+// make an older pending command move past its target after another command
+// changes the gate first.
+func (p MovementPlan) Resolve(_ float64) (float64, error) {
+	return p.TargetAperture, nil
 }
 
 func NewGateCommand(
