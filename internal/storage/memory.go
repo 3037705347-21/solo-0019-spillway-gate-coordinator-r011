@@ -12,19 +12,12 @@ type MemoryRepository struct {
 	mu       sync.RWMutex
 	gates    map[string]domain.Gate
 	commands map[string]domain.GateCommand
-	basis    map[string]movementBasis
-}
-
-type movementBasis struct {
-	aperture float64
-	revision int64
 }
 
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
 		gates:    make(map[string]domain.Gate),
 		commands: make(map[string]domain.GateCommand),
-		basis:    make(map[string]movementBasis),
 	}
 }
 
@@ -36,10 +29,6 @@ func (m *MemoryRepository) CreateGate(_ context.Context, gate domain.Gate) error
 		return domain.Conflict("duplicate_gate_id", "gate id already exists")
 	}
 	m.gates[gate.ID] = gate
-	m.basis[gate.ID] = movementBasis{
-		aperture: gate.Aperture,
-		revision: gate.Basis,
-	}
 	return nil
 }
 
@@ -65,28 +54,26 @@ func (m *MemoryRepository) CreateCommand(_ context.Context, command domain.GateC
 	if gate.Status == domain.GateFaulted {
 		return domain.Conflict("gate_faulted", "faulted gates cannot receive new commands")
 	}
-	if command.StartingAperture != gate.Aperture {
-		return domain.Conflict("gate_aperture_changed", "gate aperture changed before the command was stored")
+	if _, exists := m.commands[command.ID]; exists {
+		return domain.Conflict("duplicate_command_id", "command id already exists")
 	}
-	if command.TargetAperture > gate.MaxAperture {
-		return domain.Invalid("invalid_target_aperture", "target aperture is outside the gate limit")
-	}
-	basis, exists := m.basis[command.GateID]
-	if !exists {
-		return domain.Internal("movement_basis_missing", "gate movement basis is not available")
-	}
-	movement, err := domain.NewMovementPlan(
-		basis.aperture,
+
+	// Rebuild the immutable starting snapshot from the gate under the same lock
+	// that owns all gate state. A stale aperture read from request orchestration
+	// must never become a new command's starting point.
+	command, err = domain.NewGateCommand(
+		command.ID,
+		gate.ID,
 		command.TargetAperture,
-		basis.revision,
+		gate.Aperture,
+		gate.MaxAperture,
+		gate.Basis,
+		command.Reason,
+		command.RequestedBy,
+		command.CreatedAt,
 	)
 	if err != nil {
 		return err
-	}
-	command.StartingAperture = basis.aperture
-	command.Movement = movement
-	if _, exists := m.commands[command.ID]; exists {
-		return domain.Conflict("duplicate_command_id", "command id already exists")
 	}
 
 	m.commands[command.ID] = command

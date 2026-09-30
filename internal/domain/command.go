@@ -71,12 +71,14 @@ func (p MovementPlan) ValidateBase(aperture float64, revision int64) error {
 	return nil
 }
 
-func (p MovementPlan) Resolve(currentAperture float64) (float64, error) {
-	finalAperture := currentAperture + p.Delta
-	if finalAperture < 0 {
+// Resolve returns the command's own target. The argument is retained for the
+// movement-plan contract, but applying a saved delta to a changed gate would
+// let one completed command alter another command's final aperture.
+func (p MovementPlan) Resolve(_ float64) (float64, error) {
+	if p.TargetAperture < 0 {
 		return 0, Invalid("invalid_final_aperture", "resolved aperture must not be negative")
 	}
-	return finalAperture, nil
+	return p.TargetAperture, nil
 }
 
 func NewGateCommand(
